@@ -1,0 +1,70 @@
+/ip firewall address-list
+#rfc 1918, loopback, and multicast
+add address=10.0.0.0/8 comment="" disabled=no list=rfc-1918
+add address=127.0.0.1 comment="" disabled=no list=rfc-1918
+add address=192.168.0.0/16 comment="" disabled=no list=rfc-1918
+add address=172.16.0.0/12 comment="" disabled=no list=rfc-1918
+add address=192.168.0.0/16 comment="" disabled=no list=rfc-1918
+add address=224.0.0.0/4 comment="" disabled=no list=rfc-1918
+add address=240.0.0.0/4 comment="" disabled=no list=rfc-1918
+add address=100.64.0.0/11 comment="" disabled=no list=rfc-1918
+
+#my public addressing
+add address=X.X.X.X comment="" disabled=no list=public-add
+
+#my private addressing
+add address=S.S.S.S/SS comment="" disabled=no list=internal-nets
+
+#any port knock exclusions
+add address=Y.Y.Y.Y comment="" disabled=no list=port-knock-3
+
+#any SMTP exclusions
+add address=Z.Z.Z.Z comment="" disabled=no list=smtp-bypass
+
+/ip firewall filter
+#match more than 5 pings in 5 seconds.  Then drop the traffic inbound and forward.
+add action=accept chain=input comment="start of greg rules up to 5 pings in 5 seconds" disabled=no limit=5,5 protocol=icmp
+add action=add-src-to-address-list address-list=icmp-attack address-list-timeout=12h chain=input comment="add all other icmp input into icmp-attack address list." \
+    disabled=no protocol=icmp
+add action=drop chain=input comment="drop excessive icmp traffic for 12 hours" disabled=no src-address-list=icmp-attack protocol=icmp
+add action=drop chain=forward comment="drop excessive icmp traffic for 12 hours" disabled=yes src-address-list=icmp-attack protocol=icmp
+#drop 1918 inbound
+add action=drop chain=forward comment="block rfc 1918 and multicast inbound" disabled=no in-interface=ether1 src-address-list=rfc-1918
+add action=drop chain=forward comment="block our addressing inbound - spoofed" disabled=no in-interface=ether1 src-address-list=public-add
+add action=drop chain=input comment="block rfc 1918 and multicast inbound" disabled=no in-interface=ether1 src-address-list=rfc-1918
+add action=drop chain=input comment="block our addressing inbound - spoofed" disabled=no in-interface=ether1 src-address-list=public-add
+#start port knocking
+add action=add-src-to-address-list address-list=port-knock-1 address-list-timeout=15s chain=input comment="port knock step 1 - udp 444" disabled=no \
+    dst-port=444 protocol=udp
+add action=add-src-to-address-list address-list=port-knock-2 address-list-timeout=15s chain=input comment="port knock step 2 - udp 117" disabled=no \
+    dst-port=117 protocol=udp src-address-list=port-knock-1
+add action=add-src-to-address-list address-list=port-knock-3 address-list-timeout=5h chain=input comment="port knock step 3 - tcp 600 - final" disabled=no \
+    dst-port=600 protocol=tcp src-address-list=port-knock-2
+add action=accept chain=input comment="allow winbox in via port knock" disabled=no dst-port=8291 protocol=tcp src-address-list=port-knock-3
+add action=drop chain=input comment="allow winbox in via port knock" disabled=no dst-port=8291 protocol=tcp
+#port scans and DOS
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="add port scannes to port-scan list" disabled=no \
+    in-interface=ether1 protocol=tcp psd=21,3s,3,1 src-address-list=!internal-nets
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="NMAP FIN Stealth scan" disabled=no protocol=tcp \
+    tcp-flags=fin,!syn,!rst,!psh,!ack,!urg
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="SYN/FIN scan" disabled=no protocol=tcp tcp-flags=\
+    fin,syn
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="SYN/RST scan" disabled=no protocol=tcp tcp-flags=\
+    syn,rst
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="FIN/PSH/URG scan" disabled=no protocol=tcp tcp-flags=\
+    fin,psh,urg,!syn,!rst,!ack
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="ALL/ALL scan" disabled=no protocol=tcp tcp-flags=\
+    fin,syn,rst,psh,ack,urg
+add action=add-src-to-address-list address-list=port-scan address-list-timeout=2w chain=input comment="NMAP NULL scan" disabled=no protocol=tcp tcp-flags=\
+    !fin,!syn,!rst,!psh,!ack,!urg
+add action=tarpit chain=input comment="tarpit port-scan address list to router" disabled=no protocol=tcp src-address-list=port-scan
+add action=drop chain=input comment="drop port-scan address list to our router" disabled=no src-address-list=port-scan
+add action=drop chain=forward comment="drop port-scan address list to our infrastructure" disabled=no src-address-list=port-scan
+add action=drop chain=forward comment="drop windows ports" disabled=no port=135-139 protocol=tcp
+add action=accept chain=forward comment="allow smtp-bypass list to create multiple sessions" disabled=no dst-port=25 protocol=tcp src-address-list=smtp-bypass
+add action=drop chain=forward comment="drop smtp traffic marked as spam" disabled=no dst-port=25 protocol=tcp src-address-list=spam-block
+add action=add-src-to-address-list address-list=spam-block address-list-timeout=2h chain=forward comment=\
+    "more than 5 smtp connections out as spam.  add to address list" connection-limit=30,32 disabled=no dst-port=25 limit=50,5 protocol=tcp \
+    src-address-list=rfc-1918
+add action=accept chain=input comment="allow 80 and 8080 from portknock" disabled=no dst-port=80,8080 protocol=tcp src-address-list=port-knock-3
+add action=drop chain=input comment="block 80 and 8080 from everyone else" disabled=no dst-port=80,8080 protocol=tcp
