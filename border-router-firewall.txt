@@ -7,7 +7,7 @@ add address=172.16.0.0/12 comment="" disabled=no list=rfc-1918
 add address=192.168.0.0/16 comment="" disabled=no list=rfc-1918
 add address=224.0.0.0/4 comment="" disabled=no list=rfc-1918
 add address=240.0.0.0/4 comment="" disabled=no list=rfc-1918
-add address=100.64.0.0/11 comment="" disabled=no list=rfc-1918
+add address=100.64.0.0/10 comment="" disabled=no list=rfc-1918
 
 #my public addressing
 add address=X.X.X.X comment="" disabled=no list=public-add
